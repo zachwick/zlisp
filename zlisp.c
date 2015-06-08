@@ -20,13 +20,15 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <stdbool.h>
 #include <editline/readline.h>
 #include <editline/history.h>
 
 // zlval (zlisp value) struct
 typedef struct {
 	int type;
-	long num;
+	double num;
 	int err;
 } zlval;
 
@@ -43,9 +45,73 @@ enum {
 	ZLERR_BAD_NUM
 };
 
+// All operators and operands are each an Op
+typedef struct {
+	char* name;
+	int type;
+	int argc;
+} Op;
+
+// Enum of possible Op types
+enum {
+	ZLOP_OPR,
+	ZLOP_OPD
+};
+
+// Operator and Operand stack
+typedef struct {
+	Op * ops;
+	size_t length;
+} Stack;
+	
+// Create an initial Stack
+void
+init_stack (Stack* stack) {
+	memset (stack, 0, sizeof (Stack));
+}
+
+// Add one op to a stack
+bool
+add_op (Stack* stack, Op op) {
+	const size_t chunk_size = 1024;
+	if (stack->length % chunk_size == 0) {
+		// Try to extend the array
+		Op * new_ops = (Op *) realloc (stack->ops,
+		                               (stack->length + chunk_size) * sizeof(Op));
+		if (!new_ops) {
+			return false;
+		}
+		stack->ops = new_ops;
+	}
+	stack->ops[stack->length++] = op;
+	return true;
+}
+
+// Create a new Op
+Op
+op_create (char * opchar) {
+	Op op;
+	op.name = opchar;   
+
+	if (strcmp(op.name, "+")==0 || strcmp(op.name, "-")==0 || strcmp(op.name, "*")==0 || strcmp(op.name, "/")==0) {
+		op.type = ZLOP_OPR;
+		op.argc = 2;
+	}
+	else if (strcmp(op.name, "!")==0) {
+		op.type = ZLOP_OPR;
+		op.argc = 1;
+	}
+	else {
+		op.type = ZLOP_OPD;
+		op.argc = 1;
+	}
+
+	return op;
+}
+
 // Create a new number type zlval
 zlval
-zlval_num (long x) {
+zlval_num (double x) {
 	zlval v;
 	v.type = ZLVAL_NUM;
 	v.num = x;
@@ -61,13 +127,94 @@ zlval_err (int x) {
 	return v;
 }
 
+// Parse a given input string to a Stack of operators and operands
+Stack
+parse (char* input) {
+	Stack stack;
+	Stack* s = &stack;
+
+	char *pch;
+	Op new_op;
+	bool success = false;
+
+	// Intialize s
+	init_stack (s);
+
+	pch = strtok (input, " ");
+	while (pch != NULL) {
+		// Create a new Op out of the token
+		new_op = op_create(pch);
+		success = add_op (s, new_op);
+		if (success) {
+			pch = strtok (NULL, " ");
+		} else {
+			puts ("PARSE ERROR");
+		}
+	}
+	return stack;
+}
+
+// Evaluate a input string
+zlval
+eval (char* input) {
+	Stack parsed_input = parse(input);
+	zlval result;
+	
+	// DEGUG printing
+	/* for (int i = 0; i<parsed_input.length; i++) { */
+	/* 	puts (parsed_input.ops[i].name); */
+	/* } */
+	// DEBUG end printing
+
+	// Start with the last token, and process right -> left
+	for (int i = parsed_input.length; i>=0; i--) {
+		if (parsed_input.ops[i].type == ZLOP_OPR) {
+			// Look at ops[i].argc and take that many more ops off ot the stack
+			if (parsed_input.ops[i].argc == 2) {
+				if (strcmp(parsed_input.ops[i].name, "+") == 0) {
+					// Do addition
+					double r = atof(parsed_input.ops[i - 2].name) + atof(parsed_input.ops[i - 1].name);
+					result = zlval_num (r);
+					i = i - 2;
+					continue;
+				}
+				else if (strcmp(parsed_input.ops[i].name, "-") == 0) {
+					// Do subtraction
+					double r = atof(parsed_input.ops[i - 2].name) - atof(parsed_input.ops[i - 1].name);
+					result = zlval_num (r);
+					i = i - 2;
+					continue;
+				}
+				else if (strcmp(parsed_input.ops[i].name, "*") == 0) {
+					// Do multiplication
+					double r = atof(parsed_input.ops[i - 2].name) * atof(parsed_input.ops[i - 1].name);
+					result = zlval_num (r);
+					i = i - 2;
+					continue;
+				}
+				else if (strcmp(parsed_input.ops[i].name, "/") == 0) {
+					// Do division
+					double r = atof(parsed_input.ops[i - 2].name) / atof(parsed_input.ops[i - 1].name);
+					result = zlval_num (r);
+					i = i - 2;
+					continue;
+				}
+				else {
+					result = zlval_err (ZLERR_BAD_OP);
+				}
+			}
+		}
+	}
+	return result;
+}
+
 // Print a zlval
 void
 zlval_print (zlval v) {
 	switch (v.type) {
 	case ZLVAL_NUM:
 		// If the zlval is a number type, print it then break
-		printf ("%li", v.num);
+		printf ("%f", v.num);
 		break;
 	case ZLVAL_ERR:
 		// If the zlval is an error, print a meaningful error message
@@ -105,8 +252,9 @@ main (int argc, char** argv) {
 		add_history (input);
 
 		// Parse the input and print the result
-		//zlval result = eval(input);
-		puts (input);
+		//eval (input);
+		zlval result = eval(input);
+		zlval_println (result);
 		
 		// Free the recieved input
 		free (input);
