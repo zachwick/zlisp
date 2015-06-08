@@ -1,0 +1,14 @@
+zlisp is a stack based, RPN lisp-like language.
+
+## (R)everse (P)olish (N)otation
+
+    2 2 +
+
+The above yields `4`
+
+    2 2 + 5 *
+
+The above yields `20`
+
+Note that an operator always comes _after_ the operands. This notation lends
+itself well to stack manipulation.
